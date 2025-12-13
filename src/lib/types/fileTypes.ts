@@ -127,6 +127,7 @@ export type PDFProcessorOptions = {
   model?: string;
   maxSizeMB?: number;
   bedrockApiMode?: "converse" | "invokeModel";
+  password?: string;
 };
 
 /**
