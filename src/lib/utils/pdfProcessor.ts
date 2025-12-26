@@ -244,6 +244,7 @@ export class PDFProcessor {
       scale?: number;
       format?: "png" | "jpeg";
       quality?: number;
+      password?: string;
     },
   ): Promise<Array<{ buffer: Buffer; pageNumber: number }>> {
     // Dynamic import canvas - only load when actually needed
@@ -284,6 +285,7 @@ export class PDFProcessor {
         data: new Uint8Array(pdfBuffer),
         useSystemFonts: true,
         standardFontDataUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+        password: options?.password,
       });
 
       pdfDocument = await loadingTask.promise;
@@ -332,6 +334,38 @@ export class PDFProcessor {
 
       return images;
     } catch (error) {
+      // Handle password-related errors using PasswordException code property
+      // pdfjs-dist v5.4.296 uses PasswordException with numeric codes:
+      // - PasswordResponses.NEED_PASSWORD (code = 1): Password required
+      // - PasswordResponses.INCORRECT_PASSWORD (code = 2): Incorrect password
+      if (
+        error &&
+        typeof error === "object" &&
+        "name" in error &&
+        error.name === "PasswordException" &&
+        "code" in error
+      ) {
+        const errorCode = (error as { code: number }).code;
+
+        // Import PasswordResponses to check against numeric codes
+        const { PasswordResponses } = pdfjs;
+
+        if (errorCode === PasswordResponses.NEED_PASSWORD) {
+          logger.error(
+            `[PDF→Image] ❌ Password-protected PDF requires authentication`,
+          );
+          throw new Error(
+            "PDF is password-protected. Please provide a password using the password option.",
+          );
+        } else if (errorCode === PasswordResponses.INCORRECT_PASSWORD) {
+          logger.error(`[PDF→Image] ❌ Incorrect password provided for PDF`);
+          throw new Error(
+            "Incorrect password provided for password-protected PDF. Please verify the password and try again.",
+          );
+        }
+      }
+
+      // For other errors, use the original error handling
       logger.error(
         `[PDF→Image] ❌ Failed to convert PDF to images:`,
         error instanceof Error ? error.message : String(error),
